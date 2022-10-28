@@ -50,7 +50,7 @@ class Transformer(nn.Module):
         self.transform_layer = TransformerLayer(d_model, d_internal)
         self.FFNN = nn.Sequential(nn.Linear(d_model, d_internal),
                                   nn.ReLU(),
-                                  nn.Linear(d_internal, d_model))
+                                  nn.Linear(d_internal, num_classes), nn.Softmax())
 
     def forward(self, indices):
         """
@@ -58,11 +58,11 @@ class Transformer(nn.Module):
         :return: A tuple of the softmax log probabilities (should be a 20x3 matrix) and a list of the attention
         maps you use in your layers (can be variable length, but each should be a 20x20 matrix)
         """
-        emb = self.input_embedding(indices)
+        emb = self.input_embedding(indices) #assumes indicies is one sample
         pos = self.positional.forward(emb)
         (out, attn_maps) = self.transform_layer(pos) #this assumes one layer TODO Make layer LOOP
-        out_array = torch.asarray(self.FFNN(out))
-        attn_maps = torch.asarray(attn_maps)
+        out_array = torch.asarray(self.FFNN(out)) #output should be d_model x num_classes
+        attn_maps = [torch.asarray(attn_maps)] #to return list of attention maps
         return (out, attn_maps)
 
 
@@ -78,10 +78,30 @@ class TransformerLayer(nn.Module):
         should both be of this length.
         """
         super().__init__()
-        raise Exception("Implement me")
+        ##Attention
+        self.query = nn.Linear(d_model, d_internal)
+        self.key = nn.Linear(d_model, d_internal)
+        self.value = nn.Linear(d_model, d_internal)
+        self.FFNN = nn.Sequential( nn.Linear(d_internal_d_model), nn.Relu(), nn.linear(d_model, d_model))
+        self.linear = nn.Linear(d_model, 3)
 
     def forward(self, input_vecs):
-        raise Exception("Implement me")
+        value = self.value(input_vecs)
+        key = self.value(input_vecs)
+        query = self.value(input_vecs)
+
+        score = query * torch.transpose(key)
+        attn_map = torch.softmax(score/(math.sqrt(self.d_model))), dim = 3 #figure out correct dimension
+
+        attention_out = (atnn_map * value) + input_vecs #check dimensions
+        #normalize??
+
+        ffn_out = self.FFNN(attention_out)
+        ffnn_out = ffnn_out + attention_out #normalize??
+
+        return (ffnn_out, attn_map)
+
+
 
 
 # Implementation of positional encoding that you can use in your network
@@ -117,18 +137,40 @@ class PositionalEncoding(nn.Module):
             return x + self.emb(indices_to_embed)
 
 
+
 # This is a skeleton for train_classifier: you can implement this however you want
 def train_classifier(args, train, dev):
-    raise Exception("Not fully implemented yet")
+    ##PARAMETERS
 
-    # The following code DOES NOT WORK but can be a starting point for your implementation
-    # Some suggested snippets to use:
-    model = Transformer(...)
+    d_model = 20
+    d_internal = 128
+    num_layers = 1
+    num_heads = 1
+    num_positions = 20  # this instantiation will always have a length of 20 for input
+    epochs = 30
+    learning_rate = 0.0001
+    num_classes = 3
+    vocab_size = len(train)
+
+    # load Data
+    for input in range(0, len(train)):
+        x = train[input].input_tensor
+        y = train[input].output_tensor
+        #x = PositionalEncoding.forward(x) #returns x + potitional embedding of x
+        if input != 0:
+            embeddings = torch.cat((embeddings, x),1)
+            labels = torch.cat((labels, y),1)
+        else:
+            embeddings = x
+            labels = y
+
+
+    model = Transformer(vocab_size, num_positions, d_model, d_internal, num_classes, num_layers)  # vocab_size, num_positions, d_model, d_internal, num_classes, num_layers
     model.zero_grad()
     model.train()
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    num_epochs = 10
+    num_epochs = 30
     for t in range(0, num_epochs):
         loss_this_epoch = 0.0
         random.seed(t)
@@ -137,10 +179,11 @@ def train_classifier(args, train, dev):
         random.shuffle(ex_idxs)
         loss_fcn = nn.NLLLoss()
         for ex_idx in ex_idxs:
-            loss = loss_fcn(...) # TODO: Run forward and compute loss
-            # model.zero_grad()
-            # loss.backward()
-            # optimizer.step()
+            model.zero_grad()
+            (output, attention) = model.forward(embeddings[ex_idx])
+            loss = loss_fcn(output, labels[ex_idx])
+            loss.backward()
+            optimizer.step()
             loss_this_epoch += loss.item()
     model.eval()
     return model
