@@ -92,7 +92,7 @@ class TransformerLayer(nn.Module):
         self.d_model = d_model
         self.seq_len = 20
         self.d_internal = d_internal
-        self.d_ffn = d_model * d_internal
+        self.d_ffn = 27*3
         self.query = nn.Linear(self.seq_len, self.d_internal, bias=False)
         nn.init.xavier_uniform_(self.query.weight)  # initialize weights for linear class
         self.key = nn.Linear(self.seq_len, self.d_internal, bias=False)
@@ -163,23 +163,24 @@ class PositionalEncoding(nn.Module):
 
 
 
-# This is a skeleton for train_classifier: you can implement this however you want
+
 def train_classifier(args, train, dev):
     ##PARAMETERS
 
     d_model = 20 #embedding dim
-    d_internal = 128
+    d_internal = 64
     num_layers = 1
     num_heads = 1
     num_positions = 20  # this instantiation will always have a length of 20 for input
     epochs = 30
-    learning_rate = 0.001
+    learning_rate = 0.0005
     num_classes = 3
-    vocab_size = 27 #list_set = set(list1) need to pass in something that gives this. a dimension of something?
+    #vocab_size = 27 #list_set = set(list1) should pass in something that gives this. a dimension of something?
 
     # load Data
     for input in range(0, len(train)):
         x = train[input].input_tensor
+        #x_raw = train[input].input
         y = train[input].output_tensor
         #x = PositionalEncoding.forward(x) #returns x + potitional embedding of x
         if input != 0:
@@ -191,6 +192,8 @@ def train_classifier(args, train, dev):
             embeddings = x
             labels = y
 
+    vocab = torch.unique(embeddings)
+    vocab_size = len(vocab)
 
     model = Transformer(vocab_size, num_positions, d_model, d_internal, num_classes, num_layers)  # vocab_size, num_positions, d_model, d_internal, num_classes, num_layers
     model.zero_grad()
