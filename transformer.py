@@ -1,5 +1,5 @@
 # transformer.py
-
+import math
 import time
 import torch
 import torch.nn as nn
@@ -39,7 +39,7 @@ class Transformer(nn.Module):
         :param num_layers: number of TransformerLayers to use; can be whatever you want
         """
         super().__init__()
-        self.vocab_size = vocab_size #should match embedding size and d_model
+        self.vocab_size = vocab_size #should match embedding size and d_model??
         self.input_embedding = nn.Embedding(vocab_size, d_model)
         self.num_positions = num_positions #should be 20
         self.num_layers = num_layers
@@ -50,7 +50,14 @@ class Transformer(nn.Module):
         self.transform_layer = TransformerLayer(d_model, d_internal)
         self.FFNN = nn.Sequential(nn.Linear(d_model, d_internal),
                                   nn.ReLU(),
-                                  nn.Linear(d_internal, num_classes), nn.Softmax())
+                                  nn.Linear(d_internal, num_classes), nn.LogSoftmax(dim = 1))
+        self.linear_softmax = nn.Sequential(nn.Linear(d_model, num_classes), nn.LogSoftmax(dim = 1))
+
+
+        # initialize weights for linear class
+
+
+
 
     def forward(self, indices):
         """
@@ -58,10 +65,13 @@ class Transformer(nn.Module):
         :return: A tuple of the softmax log probabilities (should be a 20x3 matrix) and a list of the attention
         maps you use in your layers (can be variable length, but each should be a 20x20 matrix)
         """
-        emb = self.input_embedding(indices) #assumes indicies is one sample
-        pos = self.positional.forward(emb)
+
+
+        emb = self.input_embedding(indices) #assumes indicies is one sample, output: 20x20 tensor, input 1 tensor 20x1
+        pos = self.positional.forward(emb) #seq len, embedding dim, output 20x20tensor
         (out, attn_maps) = self.transform_layer(pos) #this assumes one layer TODO Make layer LOOP
-        out_array = torch.asarray(self.FFNN(out)) #output should be d_model x num_classes
+        #out = torch.asarray(self.FFNN(out)) #output should be d_model x num_classes
+        out = torch.asarray(self.linear_softmax(out))
         attn_maps = [torch.asarray(attn_maps)] #to return list of attention maps
         return (out, attn_maps)
 
@@ -79,24 +89,39 @@ class TransformerLayer(nn.Module):
         """
         super().__init__()
         ##Attention
-        self.query = nn.Linear(d_model, d_internal)
-        self.key = nn.Linear(d_model, d_internal)
-        self.value = nn.Linear(d_model, d_internal)
-        self.FFNN = nn.Sequential( nn.Linear(d_internal_d_model), nn.Relu(), nn.linear(d_model, d_model))
-        self.linear = nn.Linear(d_model, 3)
+        self.d_model = d_model
+        self.seq_len = 20
+        self.d_internal = d_internal
+        self.d_ffn = d_model * d_internal
+        self.query = nn.Linear(self.seq_len, self.d_internal, bias=False)
+        nn.init.xavier_uniform_(self.query.weight)  # initialize weights for linear class
+        self.key = nn.Linear(self.seq_len, self.d_internal, bias=False)
+        nn.init.xavier_uniform_(self.key.weight)  # initialize weights for linear class
+        self.value = nn.Linear(self.seq_len, self.d_model, bias=False)
+        nn.init.xavier_uniform_(self.value.weight)  # initialize weights for linear class
+        self.FFNN = nn.Sequential(nn.Linear(self.d_model, self.d_ffn, bias=False),
+                                  nn.ReLU(),
+                                  nn.Linear(self.d_ffn, self.d_model, bias=False))
+        self.linear_attn = nn.Linear(self.seq_len, self.d_model, bias=False)
+        nn.init.xavier_uniform_(self.linear_attn.weight)  # initialize weights for linear class
+        self.linear = nn.Linear(self.d_model, 3, bias=False)
+        nn.init.xavier_uniform_(self.linear.weight)  # initialize weights for linear class
+        self.softmax = nn.LogSoftmax(dim = 1)
 
     def forward(self, input_vecs):
-        value = self.value(input_vecs)
-        key = self.value(input_vecs)
-        query = self.value(input_vecs)
+        value = self.value(input_vecs) #20x128??
+        key = self.key(input_vecs)
+        query = self.query(input_vecs) #20x128
 
-        score = query * torch.transpose(key)
-        attn_map = torch.softmax(score/(math.sqrt(self.d_model))), dim = 3 #figure out correct dimension
+        key_transpose = torch.transpose(key, 0, 1) #128x20
 
-        attention_out = (atnn_map * value) + input_vecs #check dimensions
+        score = torch.matmul(query, key_transpose) #20x20
+        attn_map = self.softmax(score/(math.sqrt(self.d_model))) #figure out correct dimension outputs 20x20
+
+        attention_out = self.linear_attn(torch.matmul(attn_map, value)) + input_vecs #check dimensions should be seq_len by d_model 20x20
         #normalize??
 
-        ffn_out = self.FFNN(attention_out)
+        ffnn_out = self.FFNN(attention_out)
         ffnn_out = ffnn_out + attention_out #normalize??
 
         return (ffnn_out, attn_map)
@@ -142,15 +167,15 @@ class PositionalEncoding(nn.Module):
 def train_classifier(args, train, dev):
     ##PARAMETERS
 
-    d_model = 20
+    d_model = 20 #embedding dim
     d_internal = 128
     num_layers = 1
     num_heads = 1
     num_positions = 20  # this instantiation will always have a length of 20 for input
     epochs = 30
-    learning_rate = 0.0001
+    learning_rate = 0.001
     num_classes = 3
-    vocab_size = len(train)
+    vocab_size = 27 #list_set = set(list1) need to pass in something that gives this. a dimension of something?
 
     # load Data
     for input in range(0, len(train)):
@@ -158,8 +183,10 @@ def train_classifier(args, train, dev):
         y = train[input].output_tensor
         #x = PositionalEncoding.forward(x) #returns x + potitional embedding of x
         if input != 0:
-            embeddings = torch.cat((embeddings, x),1)
-            labels = torch.cat((labels, y),1)
+            embeddings = torch.vstack((embeddings, x))
+            #embeddings = torch.cat((embeddings, x))
+            labels = torch.vstack((labels, y))
+            #labels = torch.cat((labels, y))
         else:
             embeddings = x
             labels = y
@@ -170,8 +197,8 @@ def train_classifier(args, train, dev):
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    num_epochs = 30
-    for t in range(0, num_epochs):
+
+    for t in range(0, epochs):
         loss_this_epoch = 0.0
         random.seed(t)
         # You can use batching if you'd like
@@ -182,6 +209,7 @@ def train_classifier(args, train, dev):
             model.zero_grad()
             (output, attention) = model.forward(embeddings[ex_idx])
             loss = loss_fcn(output, labels[ex_idx])
+            loss.requires_grad = True #??
             loss.backward()
             optimizer.step()
             loss_this_epoch += loss.item()
