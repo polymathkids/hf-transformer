@@ -92,7 +92,7 @@ class TransformerLayer(nn.Module):
         self.d_model = d_model
         self.seq_len = 20
         self.d_internal = d_internal
-        self.d_ffn = 27*3
+        self.d_ffn = 27*3 #becuase I did- no reasoning behind size except to blow it up a little <100
         self.query = nn.Linear(self.seq_len, self.d_internal, bias=False)
         nn.init.xavier_uniform_(self.query.weight)  # initialize weights for linear class
         self.key = nn.Linear(self.seq_len, self.d_internal, bias=False)
@@ -109,8 +109,8 @@ class TransformerLayer(nn.Module):
         self.softmax = nn.LogSoftmax(dim = 1)
 
     def forward(self, input_vecs):
-        value = self.value(input_vecs) #20x128??
-        key = self.key(input_vecs)
+        value = self.value(input_vecs) #20x128?? runs input_vecs through LInear Layesr to
+        key = self.key(input_vecs) #    form key, query and value
         query = self.query(input_vecs) #20x128
 
         key_transpose = torch.transpose(key, 0, 1) #128x20
@@ -118,7 +118,7 @@ class TransformerLayer(nn.Module):
         score = torch.matmul(query, key_transpose) #20x20
         attn_map = self.softmax(score/(math.sqrt(self.d_model))) #figure out correct dimension outputs 20x20
 
-        attention_out = self.linear_attn(torch.matmul(attn_map, value)) + input_vecs #check dimensions should be seq_len by d_model 20x20
+        attention_out = self.linear_attn(torch.matmul(attn_map, value)) + input_vecs # output dimensions = seq_len by d_model 20x20
         #normalize??
 
         ffnn_out = self.FFNN(attention_out)
@@ -211,8 +211,8 @@ def train_classifier(args, train, dev):
         for ex_idx in ex_idxs:
             model.zero_grad()
             (output, attention) = model.forward(embeddings[ex_idx])
+            loss.requires_grad = True  # ??placement, ??needed
             loss = loss_fcn(output, labels[ex_idx])
-            loss.requires_grad = True #??
             loss.backward()
             optimizer.step()
             loss_this_epoch += loss.item()
