@@ -54,11 +54,7 @@ class Transformer(nn.Module):
                 ]
         )
 
-        self.FFNN_lin = nn.Linear(d_model, d_internal)
-        nn.init.xavier_uniform_(self.FFNN_lin.weight)  # initialize weights for linear class
-        self.ReLU = nn.ReLU()
-        self.FFNN_lin2 = nn.Linear(d_internal, num_classes)
-        nn.init.xavier_uniform_(self.FFNN_lin2.weight)  # initialize weights for linear class
+
         self.softmax = nn.LogSoftmax(dim = 1)
         self.final_linear = nn.Linear(d_model, num_classes)
         nn.init.xavier_uniform_(self.final_linear.weight)  # initialize weights for linear class

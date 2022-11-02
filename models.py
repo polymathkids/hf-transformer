@@ -135,7 +135,7 @@ def pred_indices_to_prediction(raw_pred_indices, indexer):
 
 def decode_basic(model, indexer, exs, num_exs=-1):
     """
-    Basic decoding method to show how to use .generate() from a HuggingFace model to get outut
+    Basic decoding method to show how to use .generate() from a HuggingFace model to get output
     :param model:
     :param indexer:
     :param exs:
@@ -160,12 +160,117 @@ def decode_basic(model, indexer, exs, num_exs=-1):
 
 def decode_oracle(model, indexer, exs, num_exs):
     # Same as decode_basic but returns the oracle prediction
-    raise Exception("Implement me")
+    # iterate through the beam,
+    # score each of the options against the gold standard (this is the “cheating” part),
+    # and return the option with the best score.
+    """
+     Basic decoding method to show how to use .generate() from a HuggingFace model to get outut
+     :param model:
+     :param indexer:
+     :param exs:
+     :param num_exs: -1 if we should use all the examples, otherwise a small number to allow decoding on fewer examples
+     :return:
+     """
+    all_example_preds = []
+    num_exs_to_use = min(num_exs, len(exs)) if num_exs > 0 else len(exs)
+    for i in range(0, num_exs_to_use):
+        ex_length = sum(exs[i]['attention_mask'])
+        dev_input_tensor = torch.tensor([exs[i]['input_ids'][0:ex_length]], dtype=torch.long)
+        #print("Input Tensor: ", dev_input_tensor)
+        dev_translated = pred_indices_to_prediction(dev_input_tensor[0][1:], indexer)
+        #print(dev_translated)
+        # You can increase this to run "real" beam search
+        beam_size = 10
+        # The generate method runs decoding with the specified set of
+        # hyperparameters and returns a list of possible sequences
+        output_ids = model.generate(dev_input_tensor, num_beams=beam_size, max_length=65, early_stopping=True,
+                                    num_return_sequences=beam_size)
+
+        one_best = pred_indices_to_prediction(output_ids.data[0][1:], indexer)
+        flag = False
+        #extract better (top) ranked prediction if possible
+        ranked_list = []
+        top_preds = []
+        look = 0
+        max_score = 0
+
+        for row in output_ids:
+            #print("Output for id ", look, ": ", output_ids.data[look][1:])
+            this_pred = pred_indices_to_prediction(output_ids.data[look][1:], indexer)
+            matches = []
+            for word in dev_translated:
+                # using substring search
+                if word == 'country':
+                    substring = 'usa'
+                elif word == 'long':
+                    substring = 'len'
+                elif word == 'rio':
+                    substring = 'river'
+                elif word == 'border':
+                    substring = 'next'
+                elif len(word) >2 and word[-1] == 's':
+                    substring = word[0:-1] #eliminate plural 's'
+                elif len(word) <4:
+                    substring = 'skip'
+                else:
+                    substring = word
+                # to get string with substring
+                matches += [i for i in this_pred if substring in i]
+            boost = []
+            for word in const_list:
+                boost += [i for i in matches if word in i]
+            score = .5 * len(matches) + 1.5 * len(boost)
+
+            if score > max_score:
+                possibilities = [i for i in this_pred if len(i) > 3] #DEBUG
+                print(matches, " in this prediction for ", dev_translated, " from possible ", possibilities ) #DEBUG
+                one_best = this_pred
+                max_score = score
+            look += 1
+        all_example_preds.append(one_best)
+
+
+            #pull top example
+            #score the preds pulled and pull top example
+        #ranked_list = sorted(all_example_preds, key=lambda score: score[0], reverse=True)
+        #top_pred = ranked_list[0][1]
+        #top_pred_score = ranked_list[0][0]
+
+    return all_example_preds
 
 
 def decode_fancy(model, indexer, exs, num_exs):
     # Same as decode_basic but returns a reranked prediction.
-    raise Exception("Implement me")
+    #take concept of scoring and ranking them from the beam search in the previous problem,
+    # but rather than manually fix them as you've written,
+    # penalize generations that fail to have the same word from the const_list in the input and output (assign a low score),
+    # and reward ones that do (assign a high score) to try to "correct" them without knowing the gold label
+
+    """
+     Basic decoding method to show how to use .generate() from a HuggingFace model to get outut
+     :param model:
+     :param indexer:
+     :param exs:
+     :param num_exs: -1 if we should use all the examples, otherwise a small number to allow decoding on fewer examples
+     :return:
+     """
+    all_example_preds = []
+    num_exs_to_use = min(num_exs, len(exs)) if num_exs > 0 else len(exs)
+    for i in range(0, num_exs_to_use):
+        ex_length = sum(exs[i]['attention_mask'])
+        dev_input_tensor = torch.tensor([exs[i]['input_ids'][0:ex_length]], dtype=torch.long)
+        # You can increase this to run "real" beam search
+        beam_size = 1
+        # The generate method runs decoding with the specified set of
+        # hyperparameters and returns a list of possible sequences
+        output_ids = model.generate(dev_input_tensor, num_beams=beam_size, max_length=65, early_stopping=True,
+                                    num_return_sequences=beam_size)
+        # [0] extracts the first candidate in the beam for the simple decoding method
+
+        #- need to pass back all of the preditction but in ranked order.
+        one_best = pred_indices_to_prediction(output_ids.data[0][1:], indexer)
+        all_example_preds.append(one_best)
+    return all_example_preds
 
 
 # 'east' doesn't actually exist
