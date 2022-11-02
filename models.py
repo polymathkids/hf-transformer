@@ -200,14 +200,26 @@ def decode_oracle(model, indexer, exs, num_exs):
             matches = []
             for word in dev_translated:
                 # using substring search
-                if word == 'country':
-                    substring = 'usa'
+                if word == 'us' or word == 'usa':
+                    substring = 'country'
                 elif word == 'long':
                     substring = 'len'
                 elif word == 'rio':
                     substring = 'river'
-                elif word == 'border':
-                    substring = 'next'
+                elif word == 'border' or word == 'bordering':
+                    substring = 'next_to'
+                #elif word == 'population': # most?
+                #    substring = 'density'
+                elif word == 'highest':
+                    substring = 'elevation'
+                elif word == '50':
+                    substring = 'country'
+                elif word == 'many':
+                    substring = 'count'
+                elif word == 'people':
+                    substring = 'population'
+                elif word == 'through':
+                    substring = '_traverse'
                 elif len(word) >2 and word[-1] == 's':
                     substring = word[0:-1] #eliminate plural 's'
                 elif len(word) <4:
@@ -222,19 +234,12 @@ def decode_oracle(model, indexer, exs, num_exs):
             score = .5 * len(matches) + 1.5 * len(boost)
 
             if score > max_score:
-                possibilities = [i for i in this_pred if len(i) > 3] #DEBUG
-                print(matches, " in this prediction for ", dev_translated, " from possible ", possibilities ) #DEBUG
+                #possibilities = [i for i in this_pred if len(i) > 3] #DEBUG
+                #print(matches, " in this prediction for ", dev_translated, " from possible ", possibilities ) #DEBUG
                 one_best = this_pred
                 max_score = score
             look += 1
         all_example_preds.append(one_best)
-
-
-            #pull top example
-            #score the preds pulled and pull top example
-        #ranked_list = sorted(all_example_preds, key=lambda score: score[0], reverse=True)
-        #top_pred = ranked_list[0][1]
-        #top_pred_score = ranked_list[0][0]
 
     return all_example_preds
 
@@ -255,21 +260,54 @@ def decode_fancy(model, indexer, exs, num_exs):
      :return:
      """
     all_example_preds = []
+    ranked_preds = []
     num_exs_to_use = min(num_exs, len(exs)) if num_exs > 0 else len(exs)
     for i in range(0, num_exs_to_use):
         ex_length = sum(exs[i]['attention_mask'])
         dev_input_tensor = torch.tensor([exs[i]['input_ids'][0:ex_length]], dtype=torch.long)
+        #print("Input Tensor: ", dev_input_tensor)
+        dev_translated = pred_indices_to_prediction(dev_input_tensor[0][1:], indexer)
+        #print(dev_translated)
         # You can increase this to run "real" beam search
-        beam_size = 1
+        beam_size = 10
         # The generate method runs decoding with the specified set of
         # hyperparameters and returns a list of possible sequences
         output_ids = model.generate(dev_input_tensor, num_beams=beam_size, max_length=65, early_stopping=True,
                                     num_return_sequences=beam_size)
-        # [0] extracts the first candidate in the beam for the simple decoding method
 
-        #- need to pass back all of the preditction but in ranked order.
         one_best = pred_indices_to_prediction(output_ids.data[0][1:], indexer)
-        all_example_preds.append(one_best)
+        flag = False
+        #extract better (top) ranked prediction if possible
+        ranked_list = []
+        top_preds = []
+        look = 0
+        max_score = 0
+
+        for row in output_ids:
+            #print("Output for id ", look, ": ", output_ids.data[look][1:])
+            this_pred = pred_indices_to_prediction(output_ids.data[look][1:], indexer)
+            matches = []
+            for word in dev_translated:
+                # using substring search
+                matches += [i for i in this_pred if word in i]
+            boost = []
+            penalty = []
+            penalty_score = 0
+            for word in const_list:
+                boost += [i for i in matches if word in i]
+                penalty += [i for i in this_pred if word in i]
+                penalty += [i for i in dev_translated if word in i]
+            if len(boost) > 0:
+                penalty_score = len(penalty) - 2* len(boost)
+            else:
+                penalty_score = len(penalty)
+            score = len(boost) - (penalty_score)
+            ranked_preds.append((score, this_pred))
+            look += 1 #move to next line in returned outout_ids
+        ranked_preds.sort(key = lambda ranked_preds: ranked_preds[0], reverse=True) #sort in place
+        all_example_preds.append(ranked_preds[0][1]) #pull top ranked
+        ranked_preds = [] #reset ranked preds list for next beam search
+
     return all_example_preds
 
 
