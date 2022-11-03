@@ -78,7 +78,8 @@ if __name__ == '__main__':
         preds = decode_basic(model, indexer, dev_dataset.copy_no_label(), num_exs=-1)
         score_decoded_outputs(preds, indexer, dev_dataset)
     elif args.decode_type == "ORACLE":
-        preds = decode_oracle(model, indexer, dev_dataset, num_exs=-1)
+        #preds = decode_oracle(model, indexer, dev_dataset, num_exs=-1)
+        preds = decode_oracle(model, indexer, dev_dataset, num_exs=50) #DEBUG
         score_decoded_outputs(preds, indexer, dev_dataset)
     elif args.decode_type == "FANCY":
         # Removes the labels to ensure that you don't simply use the oracle method here

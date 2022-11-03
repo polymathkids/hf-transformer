@@ -173,6 +173,7 @@ def decode_oracle(model, indexer, exs, num_exs):
      """
     all_example_preds = []
     num_exs_to_use = min(num_exs, len(exs)) if num_exs > 0 else len(exs)
+    #num_exs_to_use = 50 #DEBUG
     for i in range(0, num_exs_to_use):
         ex_length = sum(exs[i]['attention_mask'])
         dev_input_tensor = torch.tensor([exs[i]['input_ids'][0:ex_length]], dtype=torch.long)
@@ -180,7 +181,7 @@ def decode_oracle(model, indexer, exs, num_exs):
         dev_translated = pred_indices_to_prediction(dev_input_tensor[0][1:], indexer)
         #print(dev_translated)
         # You can increase this to run "real" beam search
-        beam_size = 10
+        beam_size = 15
         # The generate method runs decoding with the specified set of
         # hyperparameters and returns a list of possible sequences
         output_ids = model.generate(dev_input_tensor, num_beams=beam_size, max_length=65, early_stopping=True,
@@ -228,10 +229,11 @@ def decode_oracle(model, indexer, exs, num_exs):
                     substring = word
                 # to get string with substring
                 matches += [i for i in this_pred if substring in i]
-            boost = []
-            for word in const_list:
-                boost += [i for i in matches if word in i]
-            score = .5 * len(matches) + 1.5 * len(boost)
+
+            gold_label = [indexer.get_object(j) for j in exs[i]['labels'] if j >= 0]
+            (exact_match, recall, total_toks) = score_sequence(this_pred, gold_label)
+
+            score = .3 * len(matches) + 5 * exact_match + recall/total_toks
 
             if score > max_score:
                 #possibilities = [i for i in this_pred if len(i) > 3] #DEBUG
@@ -269,7 +271,7 @@ def decode_fancy(model, indexer, exs, num_exs):
         dev_translated = pred_indices_to_prediction(dev_input_tensor[0][1:], indexer)
         #print(dev_translated)
         # You can increase this to run "real" beam search
-        beam_size = 10
+        beam_size = 15
         # The generate method runs decoding with the specified set of
         # hyperparameters and returns a list of possible sequences
         output_ids = model.generate(dev_input_tensor, num_beams=beam_size, max_length=65, early_stopping=True,
@@ -286,22 +288,17 @@ def decode_fancy(model, indexer, exs, num_exs):
         for row in output_ids:
             #print("Output for id ", look, ": ", output_ids.data[look][1:])
             this_pred = pred_indices_to_prediction(output_ids.data[look][1:], indexer)
-            matches = []
-            for word in dev_translated:
-                # using substring search
-                matches += [i for i in this_pred if word in i]
+
             boost = []
-            penalty = []
-            penalty_score = 0
+            this_pred_penalty = []
+            dev_trans_penalty = []
             for word in const_list:
-                boost += [i for i in matches if word in i]
-                penalty += [i for i in this_pred if word in i]
-                penalty += [i for i in dev_translated if word in i]
-            if len(boost) > 0:
-                penalty_score = len(penalty) - 2* len(boost)
-            else:
-                penalty_score = len(penalty)
-            score = len(boost) - (penalty_score)
+                this_pred_penalty += [i for i in this_pred if word in i]
+                dev_trans_penalty += [i for i in dev_translated if word in i]
+            for word in dev_trans_penalty:
+                boost += [i for i in this_pred_penalty if word in i]
+            penalty_score = len(this_pred_penalty) + len(dev_trans_penalty) - len(boost)
+            score = len(boost) - penalty_score
             ranked_preds.append((score, this_pred))
             look += 1 #move to next line in returned outout_ids
         ranked_preds.sort(key = lambda ranked_preds: ranked_preds[0], reverse=True) #sort in place

@@ -107,7 +107,7 @@ class TransformerLayer(nn.Module):
         self.d_model = d_model
         self.seq_len = 20
         self.d_internal = d_internal
-        self.d_ffn = 160 #becuase I did- no reasoning behind size except to blow it up a little <100
+        self.d_ffn = 320 #becuase I did- no reasoning behind size except to blow it up a little <100
 
         self.query = nn.Linear(self.seq_len, self.d_internal, bias=False)
         nn.init.xavier_uniform_(self.query.weight)  # initialize weights for linear class
@@ -205,12 +205,12 @@ def train_classifier(args, train, dev):
     ##PARAMETERS
 
     d_model = 20 #embedding dim
-    d_internal = 400
+    d_internal = 500
     num_layers = 1
     num_heads = 1
     num_positions = 20  # this instantiation will always have a length of 20 for input
-    epochs = 35
-    learning_rate = 0.0005
+    epochs = 27
+    learning_rate = 0.0001
     num_classes = 3
     #vocab_size = 27 #list_set = set(list1) should pass in something that gives this. a dimension of something?
 
@@ -239,7 +239,7 @@ def train_classifier(args, train, dev):
 
     for t in range(0, epochs):
         loss_this_epoch = 0.0
-        random.seed(t)
+        #random.seed(t)
 
         # You can use batching if you'd like
         ex_idxs = [i for i in range(0, len(train))]
