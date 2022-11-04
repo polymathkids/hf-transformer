@@ -53,19 +53,9 @@ class Transformer(nn.Module):
                 for _ in range (num_layers)
                 ]
         )
-
-
         self.softmax = nn.LogSoftmax(dim = 1)
         self.final_linear = nn.Linear(d_model, num_classes)
-        nn.init.xavier_uniform_(self.final_linear.weight)  # initialize weights for linear class
-
-
-
-
-        # initialize weights for linear class
-
-
-
+        #nn.init.xavier_uniform_(self.final_linear.weight)  # initialize weights for linear class
 
     def forward(self, indices):
         """
@@ -77,15 +67,13 @@ class Transformer(nn.Module):
 
         emb = self.input_embedding(indices) #assumes indicies is one sample, output: 20x20 tensor, input 1 tensor 20x1
         pos = self.positional.forward(emb) #seq len, embedding dim, output 20x20tensor
-        pos.requires_grad_(True)
+        #pos.requires_grad_(True)
         for layer in self.transform_layers:
             (x, attn_maps) = layer.forward(pos)
             pos = x
         #(out, attn_maps) = self.transform_layer(pos) #this assumes one layer
-        #out = torch.asarray(self.FFNN(out)) #output should be d_model x num_classes
         out = self.final_linear(x)
         out = self.softmax(out)
-        #out = torch.asarray(out)
 
         attn_maps = [torch.asarray(attn_maps)] #to return list of attention maps
         return (out, attn_maps)
@@ -110,13 +98,13 @@ class TransformerLayer(nn.Module):
         self.d_ffn = 320 #becuase I did- no reasoning behind size except to blow it up a little <100
 
         self.query = nn.Linear(self.seq_len, self.d_internal, bias=False)
-        nn.init.xavier_uniform_(self.query.weight)  # initialize weights for linear class
+        #nn.init.xavier_uniform_(self.query.weight)  # initialize weights for linear class
 
         self.key = nn.Linear(self.seq_len, self.d_internal, bias=False)
-        nn.init.xavier_uniform_(self.key.weight)  # initialize weights for linear class
+       # nn.init.xavier_uniform_(self.key.weight)  # initialize weights for linear class
 
         self.value = nn.Linear(self.seq_len, self.d_model, bias=False)
-        nn.init.xavier_uniform_(self.value.weight)  # initialize weights for linear class
+       # nn.init.xavier_uniform_(self.value.weight)  # initialize weights for linear class
 
         #self.FFNN = nn.Sequential(nn.Linear(self.d_model, self.d_ffn, bias=False),
         #                          nn.ReLU(),
@@ -125,14 +113,14 @@ class TransformerLayer(nn.Module):
         self.nonlin = nn.ReLU()
         self.FFNN_lin2 = nn.Linear(self.d_ffn, self.d_model, bias = False)
 
-        nn.init.xavier_uniform_(self.FFNN_lin1.weight)  # initialize weights for linear class
-        nn.init.xavier_uniform_(self.FFNN_lin2.weight)  # initialize weights for linear class
+       # nn.init.xavier_uniform_(self.FFNN_lin1.weight)  # initialize weights for linear class
+        #nn.init.xavier_uniform_(self.FFNN_lin2.weight)  # initialize weights for linear class
 
         self.linear_attn = nn.Linear(self.seq_len, self.d_model, bias=False)
-        nn.init.xavier_uniform_(self.linear_attn.weight)  # initialize weights for linear class
+        #nn.init.xavier_uniform_(self.linear_attn.weight)  # initialize weights for linear class
 
         self.linear = nn.Linear(self.d_model, 3, bias=False)
-        nn.init.xavier_uniform_(self.linear.weight)  # initialize weights for linear class
+        #nn.init.xavier_uniform_(self.linear.weight)  # initialize weights for linear class
 
         self.softmax = nn.LogSoftmax(dim = 1)
 
@@ -151,16 +139,14 @@ class TransformerLayer(nn.Module):
 
         attention_out = self.linear_attn(torch.matmul(attn_map, value)) + input_vecs # output dimensions = seq_len by d_model 20x20
         #normalize??
-        attention_out = self.norm1(attention_out)
+        #attention_out = self.norm1(attention_out)
 
         #replication sequential model while having learnable weights
         ffnn_out = self.nonlin(self.FFNN_lin1(attention_out))
         ffnn_out = self.FFNN_lin2(ffnn_out)
 
         ffnn_out = ffnn_out + attention_out #normalize??
-        ffnn_out = self.norm2(ffnn_out)
-
-
+        #ffnn_out = self.norm2(ffnn_out)
         return (ffnn_out, attn_map)
 
 
@@ -198,12 +184,8 @@ class PositionalEncoding(nn.Module):
         else:
             return x + self.emb(indices_to_embed)
 
-
-
-
 def train_classifier(args, train, dev):
     ##PARAMETERS
-
     d_model = 20 #embedding dim
     d_internal = 500
     num_layers = 1
@@ -230,17 +212,23 @@ def train_classifier(args, train, dev):
             labels = y
 
     vocab = torch.unique(embeddings)
-    vocab_size = len(vocab)
+    vocab_size = len(vocab) #true calc of vocab size- should still be 27 but not hardcoded
 
     model = Transformer(vocab_size, num_positions, d_model, d_internal, num_classes, num_layers)  # vocab_size, num_positions, d_model, d_internal, num_classes, num_layers
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-
     for t in range(0, epochs):
+        if t == 0:
+            learning_rate = .00001
+        elif t == 1:
+            learning_rate = 0.5
+        elif t==2:
+            learning_rate = 0.001
+        else:
+            learning_rate = 0.0001
         loss_this_epoch = 0.0
         #random.seed(t)
-
         # You can use batching if you'd like
         ex_idxs = [i for i in range(0, len(train))]
         random.shuffle(ex_idxs)
@@ -248,10 +236,7 @@ def train_classifier(args, train, dev):
         for ex_idx in ex_idxs:
             model.zero_grad()
             (output, attention) = model.forward(embeddings[ex_idx])
-
             loss = loss_fcn(output, labels[ex_idx])
-            #loss.requires_grad = True  # this means that some tesnor inputs don't have grad- need to locate and enable??
-
             loss.backward()
             optimizer.step()
             loss_this_epoch += loss.item()
