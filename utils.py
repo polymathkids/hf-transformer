@@ -1,6 +1,6 @@
 # utils.py
 
-from typing import List
+geo_from typing import List
 import numpy as np
 
 class Indexer(object):
